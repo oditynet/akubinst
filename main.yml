@@ -1,0 +1,12 @@
+---
+- hosts: all
+  gather_facts: true
+  any_errors_fatal: true
+  become: true
+
+  tasks:
+  - include_tasks: roles/1-initserver/tasks/main.yml
+  - include_tasks: roles/1-initserver/tasks/keepalive.yml
+  - include_tasks: roles/1-initserver/tasks/docker.yml
+  - include_tasks: roles/2-config/tasks/main.yml
+  - include_tasks: roles/2-configkuber/tasks/main_calica.yml #or   - include: roles/2-configkuber/tasks/main_flannel.yml

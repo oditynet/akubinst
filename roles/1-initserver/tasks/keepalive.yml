@@ -1,0 +1,58 @@
+---
+#- hosts: master
+#- become: yes
+- name: block keepalive
+  block:
+    - name: Copy haproxy and keepalive packages
+      ansible.builtin.copy:
+        src: files/{{ item }}
+        dest: /tmp/{{ item }}
+      with_items:
+      - lm_sensors-libs-3.6.0-10.el9.x86_64.rpm
+      - keepalived-2.2.8-3.el9.x86_64.rpm 
+      - mariadb-connector-c-3.2.6-1.el9.x86_64.rpm
+      - haproxy-2.4.22-1.el9.x86_64.rpm      
+      - mariadb-connector-c-config-3.2.6-1.el9.noarch.rpm
+      - net-snmp-libs-5.9.1-12.el9.x86_64.rpm
+      - net-snmp-agent-libs-5.9.1-12.el9.x86_64.rpm
+    - name: Install haproxy & keepalive
+      shell: yum localinstall -y /tmp/*.rpm  
+      register: installpackage
+      ignore_errors: True
+
+    - name: Install haproxy & keepalive repo
+      shell: yum install -y keepalived haproxy
+      ignore_errors: True
+      when: installpackage.rc != 0
+
+    - name: Copy config check-api.sh
+      template:
+        src: files/check_apiserver.j2
+        dest: /etc/keepalived/check_apiserver.sh
+    - name: Copy keepalived config
+      template:
+        src: files/keepalived.j2
+        dest: /etc/keepalived/keepalived.conf
+    - name: Copy config ha
+      template:
+        src: files/haproxy.j2
+        dest: /etc/haproxy/haproxy.cfg
+    - name: Change permissions at check-api.sh
+      ansible.builtin.file:
+        path: /etc/keepalived/check_apiserver.sh
+        mode: '0744'
+
+    - name: haproxy service start
+      ansible.builtin.systemd:
+        state: restarted
+        daemon_reload: true
+        enabled: true
+        name: haproxy
+
+    - name: keepalive service start
+      ansible.builtin.systemd:
+        state: restarted
+        daemon_reload: true
+        enabled: true
+        name: keepalived
+  when: inventory_hostname  in groups['master']    

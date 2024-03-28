@@ -1,0 +1,149 @@
+---
+#- hosts: master
+#- become: yes
+- name: block prepare masters
+  block:
+    - name: Prepare reset cluster on a master
+      shell: netstat -natpl|egrep "10250|6443"|wc -l
+      register: initclustdoit
+  #  - debug: var=initclustdoit
+    - name: set initclustdoit
+      set_fact:
+        initclustdoit1: "{{ initclustdoit.stdout }}"
+    #- debug: var=initclustdoit1
+    - name: reset kuber
+      shell: kubeadm reset -f
+ #     ignore_errors: True
+      when: initclustdoit1 | int > 0
+- name: block init master1
+  block:
+    - name: init kuber
+      shell:  kubeadm init --pod-network-cidr=10.244.0.0/16 --apiserver-advertise-address={{ inventory_hostname }}  --control-plane-endpoint "{{ vipkuber }}:8443"  --upload-certs
+      register: out
+    - name: save
+      copy:
+        content: "{{ out.stdout }}"
+        dest: /root/token
+
+    - name: token worker
+      shell: cat /root/token | tail -2 | sed -r 's/\\//'| tr -s '\r\n' ' '|tr -s '\t' ' '
+      register: tokenworker
+    - name: token server
+      shell: cat /root/token | grep -A4 'control-plane node running' | tail -3 | sed -r 's/\\//'| tr -s '\r\n' ' '|tr -s '\t' ' '
+      register: tokenserver
+
+    - name: print 1
+      debug:
+        var: tokenserver
+    - name: print 2
+      debug:
+        var: tokenworker
+    - name: Set facl on all servers
+      set_fact: 
+        ts={{ tokenserver.stdout }}
+      delegate_to: "{{ item }}"
+      with_items: "{{ play_hosts }}"
+      run_once: yes
+    - name: Set facl worker
+      set_fact: 
+        tw={{ tokenworker.stdout }}
+      delegate_to: "{{ item }}"
+      with_items: "{{ play_hosts }}"
+      run_once: yes
+
+    - name: copy network plugin calico
+      copy:
+        src=files/calico.yml
+        dest=/root/calico.yml
+
+    - name: calc .bashrc
+      shell: cat /root/.bashrc|grep pass|wc -l
+      register: bashrccount
+
+    - name: set bashrccount
+      set_fact:
+        bashrccount1: "{{ bashrccount.stdout }}"
+
+    - name: Setup kubeconfig for root user to .bashrc
+      shell: "echo \"{{ item }}\" >> /root/.bashrc"
+      with_items:
+      - export KUBECONFIG=/etc/kubernetes/admin.conf
+      - alias pass='kubectl get secret admin-user -n kubernetes-dashboard -o jsonpath={".data.token"} | base64 -d'
+      - alias k='kubectl'
+      - alias calicoctl='calicoctl --allow-version-mismatch '
+      when: bashrccount1 | int == 0
+      
+    - name: calico edit pods network
+      lineinfile:
+        path: /root/calico.yml
+        regexp: '^(.+value:) "172.16.0.0/16"$'
+        line: '\1 "{{ networkpod }}"'
+        backrefs: yes
+
+    - name: Install calico 
+      command: "{{ item }}"
+      with_items:
+      - kubectl apply -f /root/calico.yml
+  when: inventory_hostname  in groups['master'][0]
+- name: block add master2,3 to cluster
+  block:
+    - name: add masters
+      shell: " {{ ts }} --apiserver-advertise-address={{ inventory_hostname }}"
+  when: inventory_hostname not in groups['master'][0] and inventory_hostname not in groups['works']
+- name: block add worker to cluster
+  block:
+    - name: add workers
+      shell: " {{ tw }} "
+  when: inventory_hostname in groups['works']
+- name: wait add masters and workers 15s
+  ansible.builtin.wait_for:
+    timeout: 15
+  ignore_errors: True
+#- name: block set labels for masters
+#  block:
+#  - name: set label masters
+#      shell:  kubectl label node {{ hostname }} node-role.kubernetes.io/control-plane=true
+#      register: out
+#  when: inventory_hostname  in groups['master']
+
+- name: set label nodes
+  shell:  kubectl label node {{ hostname }} node-role.kubernetes.io/compute=true
+  register: outlabel
+  ignore_errors: True
+  when: inventory_hostname  in groups['works']
+
+- name: Copy yaml files
+  ansible.builtin.copy:
+    src: files/{{ item }}
+    dest: /tmp/{{ item }}
+  with_items:
+  - dashboard-preconfig
+  - dashboard.yaml
+  - dashboard.sh
+  - multus-daemonset.yml
+
+- name: Install multus
+  shell: kubectl apply -f /tmp/multus-daemonset.yml
+  when: inventory_hostname  in groups['master'][0]
+
+- name: Install dashboard1
+  shell: kubectl apply -f /tmp/dashboard.yaml
+  when: inventory_hostname  in groups['master'][0]
+
+- name: Install dashboard2
+  shell: kubectl apply -f /tmp/dashboard-preconfig 
+  when: inventory_hostname  in groups['master'][0]
+
+- name: Install dashboard.sh
+  shell: bash /tmp/dashboard.sh 
+  when: inventory_hostname  in groups['master'][0]
+
+- name: dashboard-port
+  shell: kubectl -n kubernetes-dashboard get svc -o wide|grep kubernetes-dashboard|awk '{print $5}'|sed -r 's/.+:([0-9]{5}).*/\1/'
+  register: portdashboard
+  when: inventory_hostname  in groups['master'][0]
+
+- name: Show url 
+  debug:
+    msg: "Dashboard: https://{{ vipkuber }}:{{ portdashboard.stdout }}"
+  when: inventory_hostname  in groups['master'][0]

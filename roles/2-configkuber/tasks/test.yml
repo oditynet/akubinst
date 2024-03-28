@@ -1,0 +1,6 @@
+---
+- hosts: master
+  tasks:
+  - name: Install dashboard2
+    shell: kubectl --namespace kubernetes-dashboard patch svc kubernetes-dashboard -p '{"spec": {"type":"NodePort"}}'
+  when: inventory_hostname  in groups['master'][0]

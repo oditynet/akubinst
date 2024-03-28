@@ -1,0 +1,68 @@
+---
+#- hosts: master
+#- become: yes
+- name: block init master1
+  block:
+    - name: init kuber
+      shell:  kubeadm init --pod-network-cidr=10.244.0.0/16 --control-plane-endpoint "master:8443"  --upload-certs
+      register: out
+    - name: save
+      copy:
+        content: "{{ out.stdout }}"
+        dest: /root/token
+
+    - name: token worker
+      shell: cat /root/token | tail -2 | sed -r 's/\\//'| tr -s '\r\n' ' '|tr -s '\t' ' '
+      register: tokenworker
+    - name: token server
+      shell: cat /root/token | grep -A4 'control-plane node running' | tail -3 | sed -r 's/\\//'| tr -s '\r\n' ' '|tr -s '\t' ' '
+      register: tokenserver
+
+    - name: print 1
+      debug:
+        var: tokenserver
+    - name: print 2
+      debug:
+        var: tokenworker
+    - name: Set facl on all servers
+      set_fact: 
+        ts={{ tokenserver.stdout }}
+      delegate_to: "{{ item }}"
+      with_items: "{{ play_hosts }}"
+      run_once: yes
+    - name: Set facl worker
+      set_fact: 
+        tw={{ tokenworker.stdout }}
+      delegate_to: "{{ item }}"
+      with_items: "{{ play_hosts }}"
+      run_once: yes
+
+    - name: copy network plugin flannel
+      copy:
+        src=files/kube-flannel.yml
+        dest=/root/kube-flannel.yml
+    
+    - name: Setup kubeconfig for root user
+      shell: "{{ item }}"
+      with_items:
+      - export KUBECONFIG=/etc/kubernetes/admin.conf
+#      - mkdir -p /root/.kube
+ #     - /usr/bin/cp  /etc/kubernetes/admin.conf /root/.kube/config
+ #     - chown root:root /root/.kube/config
+
+    - name: Install flannel 
+      command: "{{ item }}"
+      with_items:
+      - kubectl apply -f /root/kube-flannel.yml
+  when: inventory_hostname  in groups['master'][0]
+- name: block add master2,3 to cluster
+  block:
+    - name: add masters
+      shell: " {{ ts }} "
+  when: inventory_hostname not in groups['master'][0] and inventory_hostname not in groups['works']
+- name: block add worker to cluster
+  block:
+    - name: add workers
+      shell: " {{ tw }} "
+  when: inventory_hostname in groups['works']
+

@@ -1,0 +1,42 @@
+- name: set mon_host_count
+  set_fact:
+    mon_host_count: "{{ groups['all'] | length }}"
+- name: fail when less than three monitors
+  fail:
+    msg: "Upgrade of cluster with less than three monitors is not supported."
+  when: mon_host_count | int < 3
+
+#- name: 2 state
+#  when: inventory_hostname in groups['hosts'][0]
+#  block:
+#    - name: Json test
+#      #command: "curl -s http://api.open-notify.org/astros.json "
+#      command: curl -s https://jsonplaceholder.typicode.com/posts
+#      register: out
+## ok: [server2] => 
+## out.stdout:
+##   message: success
+##   number: 10
+##   people:
+###   - craft: Tiangong
+##     name: Jing Haiping
+##   - craft: Tiangong
+##     name: Gui Haichow
+###   - craft: Tiangong
+##     name: Zhu Yangzhu
+##    - debug: var=out.stdout
+#    - name: run q
+#      set_fact:
+#        count: "{{ (out.stdout  | from_json) | map(attribute='id') | int }}"
+#    - debug: var=count
+#    - name: calc count
+#      vars:
+#        count_i: 0
+#      set_fact: count_i={{ count_i| int + 1 }}
+#      with_items: "{{ (out.stdout  | from_json)| map(attribute='title') | list }}"
+#    - debug: var=count_i
+#    - name: run p
+#      shell: /root/run.sh {{ item }}
+#      with_items: "{{ (out.stdout  | from_json) | map(attribute='title') | list }}"
+
+    

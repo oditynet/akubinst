@@ -1,0 +1,20 @@
+#---------------------------------------------------------------------
+# apiserver frontend which proxys to the masters
+#---------------------------------------------------------------------
+frontend apiserver
+    bind *:8443
+    mode tcp
+    option tcplog
+    default_backend apiserver
+#---------------------------------------------------------------------
+# round robin balancing for apiserver
+#---------------------------------------------------------------------
+backend apiserver
+    option httpchk GET /healthz
+    http-check expect status 200
+    mode tcp
+    option ssl-hello-chk
+    balance     roundrobin
+        server {{ hostvars[groups.master.0] ['hostname'] }} {{ hostvars[groups.master.0] ['ansible_ssh_host'] }}:6443 check
+        server {{ hostvars[groups.master.1] ['hostname'] }} {{ hostvars[groups.master.1] ['ansible_ssh_host'] }}:6443 check
+        server {{ hostvars[groups.master.2] ['hostname'] }} {{ hostvars[groups.master.2] ['ansible_ssh_host'] }}:6443 check

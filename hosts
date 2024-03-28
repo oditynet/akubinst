@@ -1,0 +1,24 @@
+[all:vars]
+ansible_ssh_user=root
+ansible_become=true
+ansible_become_method=sudo
+ansible_become_user=root
+ansible_ssh_port=22
+vipkuber=10.4.23.114
+vipkubername=master
+networkpod=10.96.0.0/16
+
+intkeepalive=vlan1423 #masternode for keepalive
+
+[hosts:children]
+master
+works
+
+[master]
+10.4.23.115 hostname=master1 ansible_ssh_host=10.4.23.115 state=MASTER priory=255
+10.4.23.116 hostname=master2 ansible_ssh_host=10.4.23.116 state=SLAVE priory=254
+10.4.23.117 hostname=master3 ansible_ssh_host=10.4.23.117 state=SLAVE priory=253
+
+[works]
+10.4.23.118 hostname=node1 ansible_ssh_host=10.4.23.118 
+#10.4.23.115 hostname=node2 ansible_ssh_host=10.6.16.150  
