@@ -1,0 +1,2 @@
+install masters in HA, nodes, dashboard and multus
+run: ansible-playbook -i hosts main.yml
